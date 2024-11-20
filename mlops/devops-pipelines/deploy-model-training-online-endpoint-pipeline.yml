@@ -1,0 +1,96 @@
+variables:
+- template: ../../config-infra-prod.yml
+
+trigger:
+- none
+
+pool:
+  vmImage: ubuntu-20.04
+
+stages:
+- stage: RunTrainingPipeline
+  displayName: Run Training Pipeline
+
+  jobs:
+    - job: DeployDevTrainingPipeline
+      timeoutInMinutes: 120 # how long to run the job before automatically cancelling
+      steps:
+      - checkout: self
+        path: s/
+
+      - template: /aml-cli-v2/install-az-cli.yml
+
+      - template: /aml-cli-v2/install-aml-cli.yml
+
+      - template: /mlops/azureml/connect/connect-to-workspace.yml
+
+        # Register the environment
+      - template: /aml-cli-v2/register-environment.yml
+        parameters:
+          build_type: conda
+          environment_name: taxi-train-env
+          environment_file: mlops/azureml/train/train-env.yml
+
+        # Create the compute target.
+      - template: /aml-cli-v2/create-compute.yml
+        parameters:
+          cluster_name: $(training_target)
+          size: $(training_target_sku)
+          min_instances: ${{ variables.training_target_min_nodes }}
+          max_instances: ${{ variables.training_target_max_nodes }}
+          cluster_tier: $(training_target_tier)
+
+        # Run the ML Pipeline
+      - template: /aml-cli-v2/register-data.yml
+        parameters:
+          data_type: uri_file
+          data_name: taxi-data
+          data_file: mlops/azureml/train/data.yml
+          
+        # Run the ML Pipeline
+      - template: /aml-cli-v2/run-pipeline.yml
+        parameters:
+          pipeline_file: mlops/azureml/train/pipeline.yml
+          experiment_name: $(environment)_taxi_fare_train_$(Build.SourceBranchName)
+          display_name: $(environment)_taxi_fare_run_$(Build.BuildID)
+
+- stage: CreateOnlineEndpoint
+  displayName: Create/Update Online Endpoint
+  dependsOn: RunTrainingPipeline
+  jobs:
+    - job: DeployOnlineEndpoint
+      steps:
+      - checkout: self
+        path: s/
+        # Install the Azure CLI
+      - template: /aml-cli-v2/install-az-cli.yml
+
+        # Install the Azure ML CLI
+      - template: /aml-cli-v2/install-aml-cli.yml
+
+
+        # Connect to the Azure ML workspace
+      - template: /aml-cli-v2/connect-to-workspace.yml
+
+        # Create the online endpoint
+      - template: /aml-cli-v2/create-endpoint.yml
+        parameters:
+          endpoint_file: mlops/azureml/deploy/online/online-endpoint.yml
+
+        # Create the online deployment
+      - template: /aml-cli-v2/create-deployment.yml
+        parameters:
+          deployment_name: taxi-online-dp
+          deployment_file: mlops/azureml/deploy/online/online-deployment.yml
+
+        # Allocate traffic to the online deployment
+      - template: /aml-cli-v2/allocate-traffic.yml
+        parameters:
+          traffic_allocation: taxi-online-dp=100
+
+        # Test the online deployment
+      - template: /aml-cli-v2/test-deployment.yml
+        parameters:
+          deployment_name: taxi-online-dp
+          sample_request: data/taxi-request.json
+          request_type: json
