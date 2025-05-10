@@ -1,122 +1,101 @@
-# Copyright (c) Microsoft Corporation. All rights reserved.
-# Licensed under the MIT License.
 """
-Prepares raw data and provides training, validation and test datasets
+Prepares raw data and provides training, validation, and test datasets.
 """
 
 import argparse
-
 from pathlib import Path
-import os
-import numpy as np
 import pandas as pd
-
 import mlflow
+from sklearn.model_selection import train_test_split
+from azureml.core import Dataset, Datastore, Workspace, Run
+import os
 
-TARGET_COL = "cost"
+# Initialize workspace
+workspace = Run.get_context().experiment.workspace
+
+TARGET_COL = "I_f"
 
 NUMERIC_COLS = [
-    "distance",
-    "dropoff_latitude",
-    "dropoff_longitude",
-    "passengers",
-    "pickup_latitude",
-    "pickup_longitude",
-    "pickup_weekday",
-    "pickup_month",
-    "pickup_monthday",
-    "pickup_hour",
-    "pickup_minute",
-    "pickup_second",
-    "dropoff_weekday",
-    "dropoff_month",
-    "dropoff_monthday",
-    "dropoff_hour",
-    "dropoff_minute",
-    "dropoff_second",
-]
-
-CAT_NOM_COLS = [
-    "store_forward",
-    "vendor",
-]
-
-CAT_ORD_COLS = [
+    "I_y",
+    "PF",
+    "e_PF",
+    "d_if",
 ]
 
 def parse_args():
-    '''Parse input arguments'''
-
+    """Parse input arguments"""
     parser = argparse.ArgumentParser("prep")
-    parser.add_argument("--raw_data", type=str, help="Path to raw data")
-    parser.add_argument("--train_data", type=str, help="Path to train dataset")
-    parser.add_argument("--val_data", type=str, help="Path to test dataset")
-    parser.add_argument("--test_data", type=str, help="Path to test dataset")
-   
-   
-    args = parser.parse_args()
+    parser.add_argument("--raw_data", type=str, help="Path to raw data", required=True)
+    parser.add_argument("--train_data", type=str, help="Path to train dataset", required=True)
+    parser.add_argument("--val_data", type=str, help="Path to validation dataset", required=True)
+    parser.add_argument("--test_data", type=str, help="Path to test dataset", required=True)
+    return parser.parse_args()
 
-    return args
-
+def log_data_to_run(name, path, is_file=True):
+    """Log the data path to AzureML run"""
+    run = Run.get_context()
+    if run.id != "offline":
+        if is_file:
+            # Upload individual file
+            run.upload_file(name=f"{name}/{Path(path).name}", path_or_stream=path)
+        else:
+            # Upload folder
+            run.upload_folder(name=name, path=path)
+        # Log the path
+        run.log(name, path)
+    print(f"Logged {name}: {path}")
 
 def main(args):
-    '''Read, split, and save datasets'''
+    """Read, split, save datasets, and log data paths"""
+    # Read the raw data
+    print("Reading raw data...")
+    data = pd.read_csv(Path(args.raw_data))
+    data = data[NUMERIC_COLS + [TARGET_COL]]
 
-    # ------------ Reading Data ------------ #
-    # -------------------------------------- #
+    # Split data
+    print("Splitting data...")
+    train_val_data, test_data = train_test_split(data, test_size=0.15, random_state=42)
+    train_data, val_data = train_test_split(train_val_data, test_size=0.15 / 0.85, random_state=42)
 
-    print("mounted_path files: ")
+    # Log dataset sizes to MLflow
+    print("Logging dataset sizes...")
+    mlflow.log_metric("train_size", train_data.shape[0])
+    mlflow.log_metric("val_size", val_data.shape[0])
+    mlflow.log_metric("test_size", test_data.shape[0])
 
-    data = pd.read_csv((Path(args.raw_data)))
-    data = data[NUMERIC_COLS + CAT_NOM_COLS + CAT_ORD_COLS + [TARGET_COL]]
+    # Save datasets as parquet files
+    print("Saving datasets...")
+    os.makedirs(args.train_data, exist_ok=True)
+    os.makedirs(args.val_data, exist_ok=True)
+    os.makedirs(args.test_data, exist_ok=True)
 
-    # ------------- Split Data ------------- #
-    # -------------------------------------- #
+    train_data_path = Path(args.train_data) / "train.parquet"
+    val_data_path = Path(args.val_data) / "val.parquet"
+    test_data_path = Path(args.test_data) / "test.parquet"
 
-    # Split data into train, val and test datasets
+    train_data.to_parquet(train_data_path)
+    val_data.to_parquet(val_data_path)
+    test_data.to_parquet(test_data_path)
 
-    random_data = np.random.rand(len(data))
+    # Log paths to AzureML Run
+    print("Logging data paths to AzureML...")
+    log_data_to_run("train_data_path", str(train_data_path))
+    log_data_to_run("val_data_path", str(val_data_path))
+    log_data_to_run("test_data_path", str(test_data_path))
 
-    msk_train = random_data < 0.7
-    msk_val = (random_data >= 0.7) & (random_data < 0.85)
-    msk_test = random_data >= 0.85
-
-    train = data[msk_train]
-    val = data[msk_val]
-    test = data[msk_test]
-
-    mlflow.log_metric('train size', train.shape[0])
-    mlflow.log_metric('val size', val.shape[0])
-    mlflow.log_metric('test size', test.shape[0])
-
-    train.to_parquet((Path(args.train_data) / "train.parquet"))
-    val.to_parquet((Path(args.val_data) / "val.parquet"))
-    test.to_parquet((Path(args.test_data) / "test.parquet"))
-
-
+    print("Data preparation completed successfully.")
 
 if __name__ == "__main__":
-
     mlflow.start_run()
 
-    # ---------- Parse Arguments ----------- #
-    # -------------------------------------- #
-
+    # Parse Arguments
     args = parse_args()
 
-    lines = [
-        f"Raw data path: {args.raw_data}",
-        f"Train dataset output path: {args.train_data}",
-        f"Val dataset output path: {args.val_data}",
-        f"Test dataset path: {args.test_data}",
+    print(f"Raw data path: {args.raw_data}")
+    print(f"Train dataset output path: {args.train_data}")
+    print(f"Validation dataset output path: {args.val_data}")
+    print(f"Test dataset output path: {args.test_data}")
 
-    ]
-
-    for line in lines:
-        print(line)
-    
     main(args)
 
     mlflow.end_run()
-
-    

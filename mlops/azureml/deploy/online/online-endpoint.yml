@@ -1,4 +1,12 @@
 $schema: https://azuremlschemas.azureedge.net/latest/managedOnlineEndpoint.schema.json
-name: taxi-fare-online
-description: taxi cost online endpoint
+name: defect-endpoint
+description: Online endpoint for defect machines model predictions with real-time monitoring
 auth_mode: key
+# traffic:
+#   blue: 100
+# identity:
+#   type: system_assigned
+tags:
+  environment: production
+  owner: data-science-team
+  project: defect-machines

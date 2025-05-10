@@ -1,4 +1,11 @@
 $schema: https://azuremlschemas.azureedge.net/latest/batchEndpoint.schema.json
-name: taxi-fare-batch
-description: taxi cost batch endpoint
+name: synchronous-machines-batch
+description: Batch endpoint for synchronous machines predictions on large datasets
 auth_mode: aad_token
+identity:
+  type: system_assigned
+tags:
+  environment: production
+  owner: data-science-team
+  project: synchronous-machines
+  version: "1.0"

@@ -1,11 +1,12 @@
 $schema: https://azuremlschemas.azureedge.net/latest/data.schema.json
 
-# Supported paths include:
-# local: ./<path>
-# blob:  https://<account_name>.blob.core.windows.net/<container_name>/<path>
-# ADLS gen2: abfss://<file_system>@<account_name>.dfs.core.windows.net/<path>/
-# Datastore: azureml://datastores/<data_store_name>/paths/<path>
 type: uri_file
-name: taxi-data
-description: taxi dataset
-path: ../../../data/taxi-data.csv
+name: synchronous-machines-data
+description: Data for training synchronous machines model with dynamic path pattern
+
+# In production mode, this points to the base directory containing TL01 data
+# The actual timestamp path will be added during data registration
+path: https://blobtl01iotapp.blob.core.windows.net/iotdata-tl01-iot-app/TL01
+
+# Development/Test paths (commented out)
+# path: ../../../data/data.csv

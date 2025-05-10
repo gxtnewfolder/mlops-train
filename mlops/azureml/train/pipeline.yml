@@ -1,15 +1,17 @@
 $schema: https://azuremlschemas.azureedge.net/latest/pipelineJob.schema.json
 type: pipeline
-experiment_name: taxi-fare-training
-description: Training Pipeline to train a model that predicts taxi fare price
+experiment_name: defect-machines-training
+description: Training pipeline for defect machines model with hyperparameter tuning
 
 # <inputs_and_outputs>
 inputs:
   input: #using local data, will create an anonymous data asset
     type: uri_file
-    path: azureml:taxi-data@latest
+    path: azureml:defect-machines-data@latest
 
 outputs:
+  raw_data:
+    type: uri_file
   train_data:
   val_data:
   test_data:
@@ -21,10 +23,23 @@ outputs:
 # <jobs>
 settings:
   default_datastore: azureml:workspaceblobstore
-  default_compute: azureml:cpu-cluster
-  continue_on_step_failure: false
+  default_compute: azureml:ado-instance-tl01
+  continue_on_step_failure: true
+  force_rerun: true
 
 jobs:
+  fetch_data:
+    name: fetch_data
+    display_name: fetch-data
+    code: ../../../data-science/src/preprocess
+    command: >-
+      python fetch_data.py
+      --output_path ${{outputs.raw_data}}
+      --days_back 2
+    environment: azureml:synchronous-machines-env@latest
+    outputs:
+      raw_data: ${{parent.outputs.raw_data}}
+
   prep_data:
     name: prep_data
     display_name: prep-data
@@ -35,27 +50,48 @@ jobs:
       --train_data ${{outputs.train_data}}
       --val_data ${{outputs.val_data}}
       --test_data ${{outputs.test_data}}
-    environment: azureml:taxi-train-env1@latest
+    environment: azureml:synchronous-machines-env@latest
     inputs:
-      raw_data: ${{parent.inputs.input}}
+      raw_data: ${{parent.jobs.fetch_data.outputs.raw_data}}
     outputs:
       train_data: ${{parent.outputs.train_data}}
       val_data: ${{parent.outputs.val_data}}
       test_data: ${{parent.outputs.test_data}}
 
-  train_model:
-    name: train_model
-    display_name: train-model
-    code: ../../../data-science/src/train
-    command: >-
-      python train.py
-      --train_data ${{inputs.train_data}}
-      --model_output ${{outputs.model_output}}
-    environment: azureml:taxi-train-env1@latest
+  sweep_model:
+    type: sweep
     inputs:
       train_data: ${{parent.jobs.prep_data.outputs.train_data}}
     outputs:
       model_output: ${{parent.outputs.trained_model}}
+    trial: ./train.yml
+    search_space:
+      n_estimators:
+        type: choice
+        values: [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+      bootstrap:
+        type: choice
+        values: [0, 1]
+      max_depth:
+        type: choice
+        values: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+      max_features:
+        type: choice
+        values: ["auto", "sqrt", "log2"]
+      min_samples_leaf:
+        type: choice
+        values: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      min_samples_split:
+        type: choice
+        values: [2, 3, 4, 5, 6, 7, 8, 9, 10]
+    sampling_algorithm: random
+    objective: 
+      goal: maximize
+      primary_metric: train_r2
+    limits:
+      max_total_trials: 20
+      max_concurrent_trials: 4
+      timeout: 1200
 
   evaluate_model:
     name: evaluate_model
@@ -67,10 +103,10 @@ jobs:
       --model_input ${{inputs.model_input}}
       --test_data ${{inputs.test_data}}
       --evaluation_output ${{outputs.evaluation_output}}
-    environment: azureml:taxi-train-env1@latest
+    environment: azureml:synchronous-machines-env@latest
     inputs:
-      model_name: "taxi-model"
-      model_input: ${{parent.jobs.train_model.outputs.model_output}}
+      model_name: "synchronous-machines-model"
+      model_input: ${{parent.jobs.sweep_model.outputs.model_output}}
       test_data: ${{parent.jobs.prep_data.outputs.test_data}}
     outputs:
       evaluation_output: ${{parent.outputs.evaluation_output}}
@@ -85,13 +121,12 @@ jobs:
       --model_path ${{inputs.model_path}}
       --evaluation_output ${{inputs.evaluation_output}}
       --model_info_output_path ${{outputs.model_info_output_path}}
-    environment: azureml:taxi-train-env1@latest
+    environment: azureml:synchronous-machines-env@latest
     inputs:
-      model_name: "taxi-model"
-      model_path: ${{parent.jobs.train_model.outputs.model_output}}
+      model_name: "defect-machines-model"
+      model_path: ${{parent.jobs.sweep_model.outputs.model_output}}
       evaluation_output: ${{parent.jobs.evaluate_model.outputs.evaluation_output}}
     outputs:
       model_info_output_path: ${{parent.outputs.model_info_output_path}}
-
 
 # </jobs>

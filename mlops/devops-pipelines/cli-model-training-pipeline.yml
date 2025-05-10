@@ -1,0 +1,142 @@
+variables:
+- template: ../../config-infra-prod.yml
+- name: endpoint_name
+  value: sync-machines-online-endpoint
+- name: endpoint_type
+  value: online
+- name: data_base_url
+  value: "https://blobtl01iotapp.blob.core.windows.net/iotdata-tl01-iot-app/TL01"
+- name: data_timestamp_path
+  value: "2025/03/31/09"
+
+trigger:
+- none
+
+pool:
+  vmImage: $(ap_vm_image)
+
+stages:
+
+  # Stage 1: Train Model
+  - stage: RunTrainingPipeline
+    displayName: Run Training Pipeline
+    jobs:
+    - job: DeployDevTrainingPipeline
+      displayName: Run Training Pipeline
+      timeoutInMinutes: 120
+      steps:
+      - checkout: self
+        path: s/
+
+      - template: /aml-cli-v2/install-az-cli.yml
+
+      - template: /aml-cli-v2/install-aml-cli.yml
+
+      - template: /aml-cli-v2/connect-to-workspace.yml
+        parameters:
+          rg_name: $(resource_group)
+          ws_name: $(aml_workspace)
+
+        # Create the compute target (Compute Instance)
+      - template: /aml-cli-v2/create-compute.yml
+        parameters:
+          instance_name:   $(training_target)
+          size:            $(training_target_sku)
+
+       # Start the Compute Instance only if it is not already running
+      - task: AzureCLI@2
+        displayName: Start the Compute Instance
+        inputs:
+          azureSubscription: $(ado_service_connection_aml_ws)
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            # Check the status of the compute instance
+            compute_status=$(az ml compute show --name $(training_target) \
+                                                 --resource-group $(resource_group) \
+                                                 --workspace-name $(aml_workspace) \
+                                                 --query "state" -o tsv)
+
+            echo "Current compute instance status: $compute_status"
+
+            if [ "$compute_status" == "Stopped" ]; then
+              echo "Compute instance is stopped. Starting it now..."
+              az ml compute start --name $(training_target) \
+                                  --resource-group $(resource_group) \
+                                  --workspace-name $(aml_workspace)
+            elif [ "$compute_status" == "Running" ]; then
+              echo "Compute instance is already running. Skipping this step."
+            else
+              echo "Unexpected compute instance status: $compute_status"
+              exit 1
+            fi
+
+        # Register the environment
+      - template: /aml-cli-v2/register-environment.yml
+        parameters:
+          build_type: conda
+          environment_name: synchronous-machines-env
+          environment_file: mlops/azureml/train/train-env.yml
+
+        # Find the latest data file
+      - task: AzureCLI@2
+        displayName: Find Latest Data File
+        inputs:
+          azureSubscription: $(ado_service_connection_aml_ws)
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            # Get the latest CSV file in the timestamp directory
+            echo "Searching for CSV files in specific path:"
+            LATEST_FILE=$(az storage blob list \
+              --container-name iotdata-tl01-iot-app \
+              --account-name blobtl01iotapp \
+              --auth-mode key \
+              --account-key $(storage_account_key) \
+              --prefix "TL01/$(data_timestamp_path)/" \
+              --query "[?ends_with(name, '.csv')].name" \
+              -o tsv | sort -r | head -n 1)
+            
+            if [ -z "$LATEST_FILE" ]; then
+              echo "No CSV files found in the specified path"
+              echo "Current timestamp path: $(data_timestamp_path)"
+              echo "Full search path: TL01/$(data_timestamp_path)/"
+              exit 1
+            fi
+            
+            echo "Found latest file: $LATEST_FILE"
+            
+            # Read the base data.yml and update the path
+            DATA_YML=$(cat mlops/azureml/train/data.yml)
+            UPDATED_PATH="$DATA_YML"
+            UPDATED_PATH=$(echo "$UPDATED_PATH" | sed "s|path: .*|path: https://blobtl01iotapp.blob.core.windows.net/iotdata-tl01-iot-app/$LATEST_FILE|")
+            
+            # Create a temporary data.yml with the updated path
+            echo "$UPDATED_PATH" > temp_data.yml
+            
+            # Set the data file path as a pipeline variable
+            echo "##vso[task.setvariable variable=data_file]temp_data.yml"
+
+        # Register the data using the template
+      - template: /aml-cli-v2/register-data.yml
+        parameters:
+          data_type: uri_file
+          data_name: synchronous-machines-data
+          data_file: $(data_file)
+
+        # Clean up temporary file
+      - task: AzureCLI@2
+        displayName: Clean Up Temporary File
+        inputs:
+          azureSubscription: $(ado_service_connection_aml_ws)
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            rm temp_data.yml
+
+        # Run the ML Pipeline
+      - template: /aml-cli-v2/run-pipeline.yml
+        parameters:
+          pipeline_file: mlops/azureml/train/pipeline.yml
+          experiment_name: $(environment)_synchronous_machines_training_run_$(Build.SourceBranchName)
+          display_name: $(environment)_synchronous_machines_training_run_$(Build.BuildId)

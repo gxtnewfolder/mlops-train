@@ -1,0 +1,50 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
+type: command
+
+name: train_model
+display_name: train_model
+version: 1
+
+inputs: 
+  train_data:
+    type: uri_folder
+  n_estimators:
+    type: integer
+    default: 500
+  bootstrap:
+    type: integer
+    default: 1
+  max_depth:
+    type: integer
+    default: 10
+  max_features:
+    type: string
+    default: auto
+  min_samples_leaf:
+    type: integer
+    default: 4
+  min_samples_split:
+    type: integer
+    default: 5
+  random_state:
+    type: integer
+    default: 0
+
+outputs:
+  model_output:
+    type: mlflow_model
+
+code: ../../../data-science/src/train
+
+environment: azureml:synchronous-machines-env@latest
+
+command: >-
+  python train.py 
+  --train_data ${{inputs.train_data}}
+  --n_estimators ${{inputs.n_estimators}}
+  --bootstrap ${{inputs.bootstrap}}
+  --max_depth ${{inputs.max_depth}}
+  --max_features ${{inputs.max_features}}
+  --min_samples_leaf ${{inputs.min_samples_leaf}}
+  --min_samples_split ${{inputs.min_samples_split}}
+  --model_output ${{outputs.model_output}}

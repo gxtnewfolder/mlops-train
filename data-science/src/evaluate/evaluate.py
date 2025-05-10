@@ -1,5 +1,3 @@
-# Copyright (c) Microsoft Corporation. All rights reserved.
-# Licensed under the MIT License.
 """
 Evaluates trained ML model using test dataset.
 Saves predictions, evaluation results and deploy flag.
@@ -19,35 +17,13 @@ import mlflow.sklearn
 import mlflow.pyfunc
 from mlflow.tracking import MlflowClient
 
-TARGET_COL = "cost"
+TARGET_COL = "I_f"
 
 NUMERIC_COLS = [
-    "distance",
-    "dropoff_latitude",
-    "dropoff_longitude",
-    "passengers",
-    "pickup_latitude",
-    "pickup_longitude",
-    "pickup_weekday",
-    "pickup_month",
-    "pickup_monthday",
-    "pickup_hour",
-    "pickup_minute",
-    "pickup_second",
-    "dropoff_weekday",
-    "dropoff_month",
-    "dropoff_monthday",
-    "dropoff_hour",
-    "dropoff_minute",
-    "dropoff_second",
-]
-
-CAT_NOM_COLS = [
-    "store_forward",
-    "vendor",
-]
-
-CAT_ORD_COLS = [
+    "I_y",
+    "PF",
+    "e_PF",
+    "d_if",
 ]
 
 def parse_args():
@@ -69,20 +45,21 @@ def main(args):
 
     # Load the test data
     test_data = pd.read_parquet(Path(args.test_data))
-
+    print(f"Test data loaded successfully with {len(test_data)} records")
     # Split the data into inputs and outputs
     y_test = test_data[TARGET_COL]
-    X_test = test_data[NUMERIC_COLS + CAT_NOM_COLS + CAT_ORD_COLS]
-
+    X_test = test_data[NUMERIC_COLS]
     # Load the model from input port
-    model =  mlflow.sklearn.load_model(args.model_input) 
-
+    model = mlflow.sklearn.load_model(args.model_input)
+    print(f"Model loaded successfully from {args.model_input}")
     # ---------------- Model Evaluation ---------------- #
     yhat_test, score = model_evaluation(X_test, y_test, model, args.evaluation_output)
-
+    print(f"Model evaluation completed with R² score: {score:.4f}")
     # ----------------- Model Promotion ---------------- #
     if args.runner == "CloudRunner":
         predictions, deploy_flag = model_promotion(args.model_name, args.evaluation_output, X_test, y_test, yhat_test, score)
+        print(f"Model promotion decision: {'Deploy' if deploy_flag else 'Do not deploy'}")
+            
 
 
 
@@ -104,14 +81,18 @@ def model_evaluation(X_test, y_test, model, evaluation_output):
     mae = mean_absolute_error(y_test, yhat_test)
 
     # Print score report to a text file
-    (Path(evaluation_output) / "score.txt").write_text(
-        f"Scored with the following model:\n{format(model)}"
-    )
-    with open((Path(evaluation_output) / "score.txt"), "a") as outfile:
-        outfile.write("Mean squared error: {mse.2f} \n")
-        outfile.write("Root mean squared error: {rmse.2f} \n")
-        outfile.write("Mean absolute error: {mae.2f} \n")
-        outfile.write("Coefficient of determination: {r2.2f} \n")
+    try:
+        (Path(evaluation_output) / "score.txt").write_text(
+            f"Scored with the following model:\n{format(model)}"
+        )
+        with open((Path(evaluation_output) / "score.txt"), "a") as outfile:
+            outfile.write(f"Mean squared error: {mse:.2f} \n")
+            outfile.write(f"Root mean squared error: {rmse:.2f} \n")
+            outfile.write(f"Mean absolute error: {mae:.2f} \n")
+            outfile.write(f"Coefficient of determination: {r2:.2f} \n")
+    except Exception as e:
+        print(f"Error writing score report: {e}")
+        mlflow.log_metric("error_writing_score", 1)
 
     mlflow.log_metric("test r2", r2)
     mlflow.log_metric("test mse", mse)
@@ -136,21 +117,30 @@ def model_promotion(model_name, evaluation_output, X_test, y_test, yhat_test, sc
 
     client = MlflowClient()
 
-    for model_run in client.search_model_versions(f"name='{model_name}'"):
-        model_version = model_run.version
-        mdl = mlflow.pyfunc.load_model(
-            model_uri=f"models:/{model_name}/{model_version}")
-        predictions[f"{model_name}:{model_version}"] = mdl.predict(X_test)
-        scores[f"{model_name}:{model_version}"] = r2_score(
-            y_test, predictions[f"{model_name}:{model_version}"])
+    try:
+        for model_run in client.search_model_versions(f"name='{model_name}'"):
+            try:
+                model_version = model_run.version
+                mdl = mlflow.pyfunc.load_model(
+                    model_uri=f"models:/{model_name}/{model_version}")
+                predictions[f"{model_name}:{model_version}"] = mdl.predict(X_test)
+                scores[f"{model_name}:{model_version}"] = r2_score(
+                    y_test, predictions[f"{model_name}:{model_version}"])
+            except Exception as e:
+                print(f"Warning: Could not load model version {model_version}: {str(e)}")
+                continue
+    except Exception as e:
+        print(f"Warning: Could not search for model versions: {str(e)}")
 
-    if scores:
+    # If no previous models were successfully loaded, deploy the current model
+    if not scores:
+        deploy_flag = 1
+    else:
         if score >= max(list(scores.values())):
             deploy_flag = 1
         else:
             deploy_flag = 0
-    else:
-        deploy_flag = 1
+    
     print(f"Deploy flag: {deploy_flag}")
 
     with open((Path(evaluation_output) / "deploy_flag"), 'w') as outfile:
@@ -158,15 +148,17 @@ def model_promotion(model_name, evaluation_output, X_test, y_test, yhat_test, sc
 
     # add current model score and predictions
     scores["current model"] = score
-    predictions["currrent model"] = yhat_test
+    predictions["current model"] = yhat_test
 
-    perf_comparison_plot = pd.DataFrame(
-        scores, index=["r2 score"]).plot(kind='bar', figsize=(15, 10))
-    perf_comparison_plot.figure.savefig("perf_comparison.png")
-    perf_comparison_plot.figure.savefig(Path(evaluation_output) / "perf_comparison.png")
+    # Only create comparison plot if we have scores to compare
+    if len(scores) > 1:
+        perf_comparison_plot = pd.DataFrame(
+            scores, index=["r2 score"]).plot(kind='bar', figsize=(15, 10))
+        perf_comparison_plot.figure.savefig("perf_comparison.png")
+        perf_comparison_plot.figure.savefig(Path(evaluation_output) / "perf_comparison.png")
+        mlflow.log_artifact("perf_comparison.png")
 
     mlflow.log_metric("deploy flag", bool(deploy_flag))
-    mlflow.log_artifact("perf_comparison.png")
 
     return predictions, deploy_flag
 

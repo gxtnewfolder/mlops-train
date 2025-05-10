@@ -1,0 +1,5 @@
+{
+    "storage_account_name": "blobtl01iotapp",
+    "storage_account_key": "2aCqM3tiyOdrq8nLRjj4amjqK6ZApOxSRMKVy4E47INNHqdPocIkad88Zgo5Ydmg7xW+X02przYl+ASt+zUSlQ==",
+    "storage_connection_string": "DefaultEndpointsProtocol=https;AccountName=blobtl01iotapp;AccountKey=2aCqM3tiyOdrq8nLRjj4amjqK6ZApOxSRMKVy4E47INNHqdPocIkad88Zgo5Ydmg7xW+X02przYl+ASt+zUSlQ==;EndpointSuffix=core.windows.net"
+} 

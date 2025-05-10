@@ -6,19 +6,48 @@ parameters:
   type: string
 - name: deployment_file
   type: string
-- name: enable_monitoring
+- name: endpoint_name
   type: string
-  default: 'false'
+  default: ''
 
 steps:
   - task: AzureCLI@2
-    displayName: Create deployment
-    continueOnError: true
-    inputs: 
-      azureSubscription: $(ado_service_connection_rg) #needs to have access at the RG level 
+    displayName: 'Check if deployment exists'
+    inputs:
+      azureSubscription: $(ado_service_connection_aml_ws)
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |
-        set -o xtrace
-        az ml $(endpoint_type)-deployment create --name ${{ parameters.deployment_name }} --endpoint $(endpoint_name) \
-          -f ${{ parameters.deployment_file }}
+        # Check if deployment exists
+        if az ml online-deployment show --name ${{ parameters.deployment_name }} --endpoint ${{ parameters.endpoint_name }} --resource-group $(resource_group) --workspace-name $(aml_workspace) 2>/dev/null; then
+          echo "Deployment exists, will update"
+          echo "##vso[task.setvariable variable=deployment_exists]true"
+        else
+          echo "Deployment does not exist, will create"
+          echo "##vso[task.setvariable variable=deployment_exists]false"
+        fi
+
+  - task: AzureCLI@2
+    displayName: 'Create/Update Deployment'
+    inputs:
+      azureSubscription: $(ado_service_connection_aml_ws)
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        if [ "$(deployment_exists)" == "true" ]; then
+          echo "Updating existing deployment..."
+          az ml online-deployment update \
+            --name ${{ parameters.deployment_name }} \
+            --endpoint ${{ parameters.endpoint_name }} \
+            -f ${{ parameters.deployment_file }} \
+            --resource-group $(resource_group) \
+            --workspace-name $(aml_workspace)
+        else
+          echo "Creating new deployment..."
+          az ml online-deployment create \
+            --name ${{ parameters.deployment_name }} \
+            --endpoint ${{ parameters.endpoint_name }} \
+            -f ${{ parameters.deployment_file }} \
+            --resource-group $(resource_group) \
+            --workspace-name $(aml_workspace)
+        fi
