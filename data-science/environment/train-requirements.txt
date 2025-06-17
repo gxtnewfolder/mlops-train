@@ -7,3 +7,4 @@ matplotlib==3.3.3
 opentelemetry-azure-monitor-exporter==1.0.0b20
 opentelemetry-api==1.25.0
 opentelemetry-sdk==1.25.0
+protobuf==3.20.1

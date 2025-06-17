@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timedelta
 from azure.storage.blob import BlobServiceClient
 import pandas as pd
+import mlflow
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -120,6 +121,7 @@ def fetch_data_from_blob(days_back):
         raise
 
 def main():
+    mlflow.autolog()
     args = parse_args()
     
     try:
@@ -128,6 +130,10 @@ def main():
         
         # Save the combined data directly to the output path
         data.to_csv(args.output_path, index=False)
+        
+        # Log number of rows and columns to MLflow
+        mlflow.log_metric("fetched_row_count", data.shape[0])
+        mlflow.log_metric("fetched_column_count", data.shape[1])
         
         logger.info(f"Successfully fetched and saved data to {args.output_path}")
         

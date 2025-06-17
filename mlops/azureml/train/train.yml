@@ -36,10 +36,10 @@ outputs:
 
 code: ../../../data-science/src/train
 
-environment: azureml:synchronous-machines-env@latest
+environment: azureml:defect-machines-env@latest
 
 command: >-
-  python train.py 
+  python train_bestmodelselection.py
   --train_data ${{inputs.train_data}}
   --n_estimators ${{inputs.n_estimators}}
   --bootstrap ${{inputs.bootstrap}}

@@ -35,8 +35,8 @@ jobs:
     command: >-
       python fetch_data.py
       --output_path ${{outputs.raw_data}}
-      --days_back 2
-    environment: azureml:synchronous-machines-env@latest
+      --days_back 30
+    environment: azureml:defect-machines-env@latest
     outputs:
       raw_data: ${{parent.outputs.raw_data}}
 
@@ -50,7 +50,7 @@ jobs:
       --train_data ${{outputs.train_data}}
       --val_data ${{outputs.val_data}}
       --test_data ${{outputs.test_data}}
-    environment: azureml:synchronous-machines-env@latest
+    environment: azureml:defect-machines-env@latest
     inputs:
       raw_data: ${{parent.jobs.fetch_data.outputs.raw_data}}
     outputs:
@@ -103,9 +103,9 @@ jobs:
       --model_input ${{inputs.model_input}}
       --test_data ${{inputs.test_data}}
       --evaluation_output ${{outputs.evaluation_output}}
-    environment: azureml:synchronous-machines-env@latest
+    environment: azureml:defect-machines-env@latest
     inputs:
-      model_name: "synchronous-machines-model"
+      model_name: "defect-machines-model"
       model_input: ${{parent.jobs.sweep_model.outputs.model_output}}
       test_data: ${{parent.jobs.prep_data.outputs.test_data}}
     outputs:
@@ -121,7 +121,7 @@ jobs:
       --model_path ${{inputs.model_path}}
       --evaluation_output ${{inputs.evaluation_output}}
       --model_info_output_path ${{outputs.model_info_output_path}}
-    environment: azureml:synchronous-machines-env@latest
+    environment: azureml:defect-machines-env@latest
     inputs:
       model_name: "defect-machines-model"
       model_path: ${{parent.jobs.sweep_model.outputs.model_output}}

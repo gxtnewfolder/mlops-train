@@ -54,8 +54,8 @@ def main(args):
 
     # Split data
     print("Splitting data...")
-    train_val_data, test_data = train_test_split(data, test_size=0.15, random_state=42)
-    train_data, val_data = train_test_split(train_val_data, test_size=0.15 / 0.85, random_state=42)
+    train_val_data, test_data = train_test_split(data, test_size=0.2, random_state=42)
+    train_data, val_data = train_test_split(train_val_data, test_size=0.25 / 0.75, random_state=42)
 
     # Log dataset sizes to MLflow
     print("Logging dataset sizes...")

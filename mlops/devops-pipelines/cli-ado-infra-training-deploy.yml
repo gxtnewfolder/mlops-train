@@ -88,7 +88,7 @@ stages:
       - template: /aml-cli-v2/register-environment.yml
         parameters:
           build_type: conda
-          environment_name: synchronous-machines-env
+          environment_name: defect-machines-env
           environment_file: mlops/azureml/train/train-env.yml
 
       # Find the latest data file

@@ -47,10 +47,20 @@ def parse_args():
                         help='Whether to fit the intercept for the linear regression')
     
     # random forest specific arguments
-    parser.add_argument('--n_estimators', type=int, default=100,
+    parser.add_argument('--n_estimators', type=int, default=500,
                         help='Number of trees in the random forest')
-    parser.add_argument('--max_depth', type=int, default=None,
+    parser.add_argument('--bootstrap', type=int, default=1,
+                        help='Whether bootstrap samples are used when building trees')
+    parser.add_argument('--max_depth', type=int, default=10,
                         help='Maximum depth of the trees in the random forest')
+    parser.add_argument('--max_features', type=str, default='auto',
+                        help='Number of features to consider when looking for the best split')
+    parser.add_argument('--min_samples_leaf', type=int, default=4,
+                        help='Minimum number of samples required to be at a leaf node')
+    parser.add_argument('--min_samples_split', type=int, default=5,
+                        help='Minimum number of samples required to split an internal node')
+    parser.add_argument('--random_state', type=int, default=0,
+                        help='Random state for reproducibility')
 
     args = parser.parse_args()
 
@@ -114,8 +124,12 @@ def main(args):
         # Model 3: Random Forest Regressor
         rf_model = RandomForestRegressor(
             n_estimators=args.n_estimators,
+            bootstrap=bool(args.bootstrap),
             max_depth=args.max_depth,
-            random_state=42
+            max_features=args.max_features,
+            min_samples_leaf=args.min_samples_leaf,
+            min_samples_split=args.min_samples_split,
+            random_state=args.random_state
         )
         
         # Dictionary to store models and their metrics
@@ -144,7 +158,12 @@ def main(args):
             mlflow.log_param(f"{model_name}_fit_intercept", args.fit_intercept)
         elif model_name == "RandomForestRegressor":
             mlflow.log_param(f"{model_name}_n_estimators", args.n_estimators)
-            mlflow.log_param(f"{model_name}_max_depth", args.max_depth if args.max_depth else "None")
+            mlflow.log_param(f"{model_name}_bootstrap", args.bootstrap)
+            mlflow.log_param(f"{model_name}_max_depth", args.max_depth)
+            mlflow.log_param(f"{model_name}_max_features", args.max_features)
+            mlflow.log_param(f"{model_name}_min_samples_leaf", args.min_samples_leaf)
+            mlflow.log_param(f"{model_name}_min_samples_split", args.min_samples_split)
+            mlflow.log_param(f"{model_name}_random_state", args.random_state)
 
         # Train model
         model.fit(X_train, y_train)
@@ -309,7 +328,12 @@ if __name__ == "__main__":
             f"Polynomial degree: {args.polynomial_degree}",
             f"Fit intercept: {args.fit_intercept}",
             f"Random Forest n_estimators: {args.n_estimators}",
-            f"Random Forest max_depth: {args.max_depth if args.max_depth else 'None'}"
+            f"Random Forest bootstrap: {args.bootstrap}",
+            f"Random Forest max_depth: {args.max_depth}",
+            f"Random Forest max_features: {args.max_features}",
+            f"Random Forest min_samples_leaf: {args.min_samples_leaf}",
+            f"Random Forest min_samples_split: {args.min_samples_split}",
+            f"Random Forest random_state: {args.random_state}"
         ]
 
         for line in lines:

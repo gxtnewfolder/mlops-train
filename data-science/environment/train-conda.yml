@@ -1,4 +1,4 @@
-name: synchronous-machines-env
+name: defect-machines-env
 channels:
   - defaults
   - anaconda
@@ -17,5 +17,4 @@ dependencies:
       - opentelemetry-api==1.25.0
       - azure-monitor-opentelemetry-exporter==1.0.0b20
       - azureml-ai-monitoring==1.0.0
-      - azure-ai-ml==1.16.0
-      - azure-identity==1.16.0
+      - protobuf==3.20.3
